@@ -6,10 +6,12 @@ import traceback
 import re
 import os,sys
 
-
+import win32gui
 import win32con
 import win32api
 import win32clipboard
+import win32ui
+import ctypes
 
 from tkinter import *
 from tkinter import messagebox, tix as Tix
@@ -18,6 +20,8 @@ import tkinter.font as tf
 import threading
 from pynput import keyboard
 from pynput.mouse import Listener as mouseListener
+
+from PIL import Image,ImageTk
 
 WindX  = {}
 WindX['self_folder'] = re.sub(r'\\','/',os.path.abspath(os.path.dirname(__file__)))
@@ -34,6 +38,7 @@ WindX['Ctrl_C'] = 0
 WindX['check'] = 0
 WindX['stop_cheking'] = 0
 WindX['TopLevel'] = None
+WindX['Label_ImageTk'] = None
 
 def CheckClipboard():
     if WindX['stop_cheking']:
@@ -56,6 +61,7 @@ def CheckClipboard():
 
     matchQTY = 0
     matchedTypes = {}
+    matchedLines = []
 
     if len(text):
         #print("\tClipboard=", text)
@@ -94,7 +100,10 @@ def CheckClipboard():
                     if matchObj:
                         #print(matchObj.groups())
                         matches.append(matchObj.groups()[0])
-                        matchedTypes[matchObj.groups()[0]] = 1
+                        if matchedTypes.__contains__(matchObj.groups()[0]):
+                            matchedTypes[matchObj.groups()[0]] += 1
+                        else:
+                            matchedTypes[matchObj.groups()[0]] = 1
 
                         st = 0
                         while st > -1:
@@ -112,7 +121,7 @@ def CheckClipboard():
                     #print(match_points) 
                     st = 0
                     for s in sorted(match_points.keys()):
-                        print(s, match_points[s])
+                        print('\t\t',s, match_points[s])
 
                         dt_b = ''
                         dt_a = ''
@@ -127,61 +136,77 @@ def CheckClipboard():
 
                         if dt_b:
                             b = str(row) + '.' + str(st)
-                            WindX['Text'].insert(b, dt_b, 'tag_no_match')
+                            #WindX['Text'].insert(b, dt_b, 'tag_no_match')
+                            matchedLines.append([b, dt_b, 'tag_no_match'])
 
                         if dt_a:
                             a = str(row) + '.' + str(match_points[s][1])
-                            WindX['Text'].insert(a, dt_a, 'tag_match')
+                            #WindX['Text'].insert(a, dt_a, 'tag_match')
+                            matchedLines.append([a, dt_a, 'tag_match'])
 
                         st = match_points[s][2] + 1
                         
                     if st < len(t) -1:
                         dt_b = t[st : len(t)]
                         b = str(row) + '.' + str(st)
-                        WindX['Text'].insert(b, dt_b, 'tag_no_match')
+                        #WindX['Text'].insert(b, dt_b, 'tag_no_match')
+                        matchedLines.append([b, dt_b, 'tag_no_match'])
 
                     #a = str(row) + '.0'                
                     #WindX['Text'].insert(a, t, 'tag_match')
 
                     c = str(row) + '.' + str(len(t) + 5)
                     ms= "   ::["+str(matchQTY)+"]:: Found ["+", ".join(matches)+"]  "
-                    WindX['Text'].insert(c, ms, 'tag_match_word')
+                    #WindX['Text'].insert(c, ms, 'tag_match_word')
+                    matchedLines.append([c, ms, 'tag_match_word'])
                     
                     d = str(row) + '.' + str(len(t + ms) + 5)
-                    WindX['Text'].insert(d, "\n", 'tag_x')
+                    #WindX['Text'].insert(d, "\n", 'tag_x')
+                    matchedLines.append([d, "\n", 'tag_x'])
                 else:
                     b = str(row) + '.0'
-                    WindX['Text'].insert(b, t + "\n", 'tag_no_match')
+                    #WindX['Text'].insert(b, t + "\n", 'tag_no_match')
+                    matchedLines.append([b, t + "\n", 'tag_no_match'])
 
     if matchQTY:
-        matches = sorted(matchedTypes.keys())
-        msg = 'Found in ' + str(matchQTY) + " lines -- checked done! Found words: [" + ", ".join(matches) + "]"
-        WindX['Status'].configure(text=msg,bg='yellow', fg='red')
-        Message(msg, 'yellow', 'red')
+        matches = []
+        for key in sorted(matchedTypes.keys()):
+            matches.append(key + " ("+ str(matchedTypes[key]) +")")
+        WindX['Status'].configure(text='Find Words: Found in ' + str(matchQTY) + " lines -- checked done! Found: [" + ", ".join(matches) + "]" ,bg='yellow', fg='red')
+        Message('Find Words: Found in ' + str(matchQTY) + " lines -- checked done! \nFound: [" + ", ".join(matches) + "]", 'yellow', 'red')
 
     else:
-        WindX['Status'].configure(text='No found -- checked done!',bg='#EFEFEF', fg='green')
-        Message('No found -- checked done!', '#EFEFEF', 'green')
+        WindX['Status'].configure(text='Find Words: No found -- checked done!',bg='green', fg='white')
+        Message('Find Words: No found -- checked done!', 'green', 'white')
 
+    if len(matchedLines):
+        for t in matchedLines:
+            WindX['Text'].insert(t[0], t[1], t[2])
 
     WindX['main'].update()     
 
 def Message(msg, bgColor, fgColor):
+    if WindX['TopLevel']:
+        WindX['TopLevel'].destroy()
+
     WindX['TopLevel'] = Toplevel()
     WindX['TopLevel'].wm_attributes('-topmost',1)        
     pos = win32api.GetCursorPos()
-    WindX['TopLevel'].geometry('+'+ str(pos[0]) +'+' + str(pos[1] - 20))
+    WindX['TopLevel'].geometry('+'+ str(pos[0]) +'+' + str(pos[1] + 20))
     WindX['TopLevel'].overrideredirect(1)
 
     font_type = None 
     try:
-        font_type = tf.Font(family="Lucida Grande", size=15)
+        font_type = tf.Font(family="Lucida Grande")  #, size=12
     except:
         pass
     label = Label(WindX['TopLevel'], text=msg, justify=LEFT, relief=FLAT,pady=3,padx=3, anchor='w', bg=bgColor, fg=fgColor, font=font_type)
     label.pack(side=TOP, fill=X)
 
-def WindExit():           
+def WindExit():    
+    if WindX['TopLevel']:
+        WindX['TopLevel'].destroy()
+
     WindX['main'].destroy()    
     os._exit(0)
     #sys.exit(0)  # This will cause the window error: Python has stopped working ...
@@ -203,13 +228,16 @@ def main():
     WindX['FindStringVar'] = StringVar()
     e=Entry(frame1, justify=LEFT, relief=FLAT, textvariable= WindX['FindStringVar'], fg='blue')
     e.pack(side=LEFT, fill=BOTH, pady=3,padx=0, expand=True)
-    e.insert(0,'Category, Group, Business\s+Sector, Audit\s+Finding\s+Type, Audit\s+Type, Severity, Division, CAR\s+Type, Concern\s+Type, Type, Checklist')
+    e.insert(0,'Category, Group, Business\s+Sector, Audit\s+Finding\s+Type, Audit\s+Type, Severity, Division, CAR\s+Type, Concern\s+Type, Type, Checklist, Process\s+CAR, Product\s+CAR')
     #WindX['Find_Entry'] = e
+
+    WindX['Label_from'] = Label(WindX['main'], text='', justify=CENTER, relief=FLAT,pady=3,padx=3)
+    WindX['Label_from'].pack(side=TOP, fill=X)
 
     framex = Frame(WindX['main'])
     #s1 = Scrollbar(framex, orient= HORIZONTAL)
     s2 = Scrollbar(framex, orient= VERTICAL)
-    WindX['Text'] = Text(framex, padx=5, pady=5, yscrollcommand=s2.set, wrap=WORD)  #wrap=WORD  NONE CHAR  xscrollcommand=s1.set, 
+    WindX['Text'] = Text(framex, padx=5, pady=5, yscrollcommand=s2.set, relief=FLAT, wrap=WORD)  #wrap=WORD  NONE CHAR  xscrollcommand=s1.set, 
     s2.config(command=WindX['Text'].yview)     
     #s1.config(command=WindX['Text'].xview)
 
@@ -235,11 +263,11 @@ def on_press(key):
             elif key.name == 'esc':
                 if WindX['stop_cheking']:
                     WindX['stop_cheking'] = 0
-                    WindX['Label'].configure(text='---------------- Ready to check ----------------')
+                    WindX['Label'].configure(text='---------------- Ready to check ----------------',fg='black',bg='#EFEFEF')
                     WindX['main'].update()
                 else:
                     WindX['stop_cheking'] = 1
-                    WindX['Label'].configure(text='---------------- locked now, hit [ESC] key to unlock it! ----------------')                    
+                    WindX['Label'].configure(text='---------------- locked now, hit [ESC] key to unlock it! ----------------',fg='red',bg='yellow')                    
                     WindX['main'].update()
 
         elif isinstance(key, keyboard.KeyCode):
@@ -248,10 +276,14 @@ def on_press(key):
             if key.vk == 67:
                 if WindX['Text'] and (not WindX['stop_cheking']):
                     WindX['Text'].delete('1.0',END)
-                    WindX['Status'].configure(text='',bg='#EFEFEF')
+                    WindX['Status'].configure(text='',bg='#EFEFEF')                    
 
                 if WindX['Ctrl_Pressed']:
                     WindX['Ctrl_C'] = 1
+
+                    if not WindX['stop_cheking']:
+                        WindX['Label_from'].configure(image='')
+                        WindX['Label_ImageTk'] = None
     except:  
         print(traceback.format_exc())      
         
@@ -265,6 +297,27 @@ def on_release(key):
                 #print('special key {0} pressed'.format(key))
 
         if WindX['Ctrl_C']:
+            try:
+                fgwHandle = win32gui.GetForegroundWindow()
+                if fgwHandle and (not WindX['stop_cheking']):
+                    print('\tForeground Window:',fgwHandle,',', win32gui.GetWindowText(fgwHandle), ',', win32gui.GetWindowRect(fgwHandle), get_window_rect(fgwHandle))
+                    #left, top, right, bottom = win32gui.GetWindowRect(fgwHandle) #this function causes an offset -8!!!  see https://blog.csdn.net/See_Star/article/details/103940462
+                    #offsetx = 8
+                    left, top, right, bottom = get_window_rect(fgwHandle)                    
+                    offsetx = 0
+                    im_PIL,err = ScreenShotXY(width=right - left - offsetx*2,height=100,xSrc=left + offsetx,ySrc=top + offsetx)
+                    if im_PIL:
+                        gs = re.split(r'x|\+', WindX['main'].geometry()) #506x152+-1418+224
+                        img_size = im_PIL.size
+                        if img_size[0] > int(gs[0]):
+                            xheight = int(img_size[1] * int(gs[0])/img_size[0])
+                            im_PIL = im_PIL.resize((int(gs[0]),xheight),Image.ANTIALIAS)
+
+                        WindX['Label_ImageTk'] = ImageTk.PhotoImage(im_PIL)
+                        WindX['Label_from'].configure(image=WindX['Label_ImageTk'])
+            except:
+                print(traceback.format_exc()) 
+
             CheckClipboard()
             WindX['Ctrl_C'] = 0
 
@@ -284,9 +337,78 @@ def MouseOnClick(x, y, button, pressed):
         WindX['TopLevel'].destroy()
         WindX['TopLevel'] = None
 
+def MouseOnMove(x, y):
+    if WindX['TopLevel']: 
+        WindX['TopLevel'].geometry('+'+ str(x) +'+' + str(y + 20))
+
 def MouseListener():
-    with mouseListener(on_click=MouseOnClick) as listener: #(on_move=on_move, on_click=on_click, on_scroll=on_scroll) 
+    with mouseListener(on_click=MouseOnClick, on_move=MouseOnMove) as listener: #(on_move=on_move, on_click=on_click, on_scroll=on_scroll) 
         listener.join()
+
+def get_window_rect(hwnd):
+    try:
+        f = ctypes.windll.dwmapi.DwmGetWindowAttribute
+    except WindowsError:
+        f = None
+    if f:
+        rect = ctypes.wintypes.RECT()
+        DWMWA_EXTENDED_FRAME_BOUNDS = 9
+        f(ctypes.wintypes.HWND(hwnd),
+          ctypes.wintypes.DWORD(DWMWA_EXTENDED_FRAME_BOUNDS),
+          ctypes.byref(rect),
+          ctypes.sizeof(rect)
+          )
+        return rect.left, rect.top, rect.right, rect.bottom
+
+def ScreenShotXY(width=0,height=0,xSrc=None,ySrc=None):
+    im_PIL = None  
+    err = None
+    try:
+        if width == 0: 
+            width = WindX['Displays']['FullScreenSize'][0]
+        if height== 0:
+            height= WindX['Displays']['FullScreenSize'][1]
+
+        if xSrc == None:
+            xSrc = WindX['Displays']['FullScreenSize'][2]
+        if ySrc == None:
+            ySrc = WindX['Displays']['FullScreenSize'][3]
+        
+        hWnd = 0
+        hWndDC = win32gui.GetWindowDC(hWnd)   #0 - desktop
+        #创建设备描述表
+        mfcDC = win32ui.CreateDCFromHandle(hWndDC)
+        #创建内存设备描述表
+        saveDC = mfcDC.CreateCompatibleDC()
+        #创建位图对象准备保存图片
+        saveBitMap = win32ui.CreateBitmap()
+        #为bitmap开辟存储空间
+        #print(width,height,xSrc,ySrc,';',hWndDC,';',mfcDC) #-1920 1080 1920 1080 ; 889263399 ; object 'PyCDC' - assoc is 000001F1B3EC5998, vi=<None>
+        saveBitMap.CreateCompatibleBitmap(mfcDC,width,height)
+        #将截图保存到saveBitMap中
+        saveDC.SelectObject(saveBitMap)
+        #保存bitmap到内存设备描述表
+        saveDC.BitBlt((0,0), (width,height), mfcDC, (xSrc, ySrc), win32con.SRCCOPY)  
+        #BOOLBitBlt((int x,int y),(int nWidth,int nHeight),CDC*pSrcDC,(int xSrc,int ySrc),DWORDdwRop);
+        bmpinfo = saveBitMap.GetInfo()
+        bmpstr = saveBitMap.GetBitmapBits(True)
+        ###生成图像
+        im_PIL = Image.frombuffer('RGB',(bmpinfo['bmWidth'],bmpinfo['bmHeight']),bmpstr,'raw','BGRX',0,1)
+        #print(im_PIL)
+        win32gui.DeleteObject(saveBitMap.GetHandle())
+        saveDC.DeleteDC()
+        mfcDC.DeleteDC()
+        win32gui.ReleaseDC(hWnd,hWndDC)
+    except:
+        err = traceback.format_exc()
+        print(traceback.format_exc())
+    '''
+    if isinstance(im_PIL, Image.Image):
+        print ("Image size: %s, mode: %s" % (im_PIL.size, im_PIL.mode))                    
+    else:
+        print("Failed to get screenshot!")
+    '''
+    return im_PIL,err
 
 if __name__ == "__main__":     
     t1 = threading.Timer(1,keyboardListener)
